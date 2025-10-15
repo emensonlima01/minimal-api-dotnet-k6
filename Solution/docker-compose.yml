@@ -61,7 +61,10 @@ services:
         k6 run /scripts/tests/ramp-up/payment-ramp-up-test.js;
         k6 run /scripts/tests/high-load/payment-constant-high-load-test.js;
         k6 run /scripts/tests/mixed/payment-mixed-scenarios-test.js;
-        k6 run /scripts/tests/benchmark/payment-performance-benchmark-test.js
+        k6 run /scripts/tests/benchmark/payment-performance-benchmark-test.js;
+        k6 run /scripts/tests/http-failure/payment-http-timeout-test.js;
+        k6 run /scripts/tests/http-failure/payment-connection-limit-test.js;
+        k6 run /scripts/tests/http-failure/payment-connection-refused-test.js
       "
     environment:
       - API_URL=http://payment-api:5000

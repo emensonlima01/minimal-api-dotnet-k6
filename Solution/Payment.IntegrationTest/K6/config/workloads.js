@@ -86,3 +86,28 @@ export const benchmarkWorkload = {
         { duration: '6s', target: 0 },
     ],
 };
+
+export const httpTimeoutWorkload = {
+    stages: [
+        { duration: '5s', target: 10 },
+        { duration: '10s', target: 30 },
+        { duration: '5s', target: 0 },
+    ],
+};
+
+export const connectionLimitWorkload = {
+    stages: [
+        { duration: '3s', target: 50 },
+        { duration: '5s', target: 200 },
+        { duration: '10s', target: 500 },
+        { duration: '5s', target: 0 },
+    ],
+};
+
+export const connectionRefusedWorkload = {
+    stages: [
+        { duration: '5s', target: 5 },
+        { duration: '10s', target: 10 },
+        { duration: '5s', target: 0 },
+    ],
+};

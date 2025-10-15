@@ -54,3 +54,10 @@ export const benchmarkThresholds = {
     payment_duration_custom: ['p(95)<500', 'avg<300'],
     errors: ['rate<0.01'],
 };
+
+export const httpFailureThresholds = {
+    http_req_failed: ['rate>0.5'], 
+    http_timeouts: ['rate>0.3'], 
+    connection_errors: ['rate<1'], 
+    network_errors_total: ['count>0'], 
+};

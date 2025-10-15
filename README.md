@@ -49,23 +49,34 @@ Solution/
 └─ Payment.IntegrationTest/
    └─ K6/                          # Scripts k6 para carga
       ├─ config/                   # Variáveis de ambiente, workloads e thresholds
-      ├─ scenarios/                # Operações reutilizáveis (CRUD)
+      ├─ scenarios/                # Operações reutilizáveis (CRUD + falhas HTTP)
       ├─ tests/                    # Suítes completas de carga
+      │  ├─ smoke/                 # Teste de fumaça
+      │  ├─ load/                  # Teste de carga
+      │  ├─ stress/                # Teste de estresse
+      │  ├─ spike/                 # Teste de pico
+      │  ├─ soak/                  # Teste de durabilidade
+      │  ├─ breakpoint/            # Teste de ponto de ruptura
+      │  ├─ ramp-up/               # Teste de rampa
+      │  ├─ high-load/             # Teste de alta carga
+      │  ├─ mixed/                 # Cenários mistos
+      │  ├─ benchmark/             # Benchmark de performance
+      │  └─ http-failure/          # Testes de falhas HTTP/rede
       └─ utils/                    # Geradores, métricas e helpers
 ```
 
 ## Testes de Carga com k6
 
-A pasta `Solution/Payment.IntegrationTest/K6` contém uma coleção de suítes de carga pensadas para exercitar Minimal APIs: fumaça, carga sustentada, estresse, pico, soak, breakpoint, ramp-up, carga constante, cenários mistos e benchmark de desempenho. Cada suíte combina cenários reutilizáveis com workloads e limites de desempenho específicos.
+A pasta `Solution/Payment.IntegrationTest/K6` contém uma coleção de suítes de carga pensadas para exercitar Minimal APIs: fumaça, carga sustentada, estresse, pico, soak, breakpoint, ramp-up, carga constante, cenários mistos, benchmark de desempenho e **testes de falhas HTTP/rede**. Cada suíte combina cenários reutilizáveis com workloads e limites de desempenho específicos.
 
 ### Pastas e responsabilidades
 - `config/environments.js` define URLs por ambiente e permite sobrescrever via `ENVIRONMENT` ou `API_URL`
 - `config/workloads.js` descreve o padrão de usuários virtuais para cada tipo de teste
 - `config/thresholds.js` centraliza os limites de SLA usados nas suítes
-- `scenarios/` concentra funções para criar, consultar, atualizar e excluir pagamentos
-- `tests/` contém os scripts executáveis (`k6 run`) organizados por tipo de teste
+- `scenarios/` concentra funções para criar, consultar, atualizar e excluir pagamentos, além de cenários de falhas HTTP
+- `tests/` contém os scripts executáveis (`k6 run`) organizados por tipo de teste (performance e http-failure)
 - `utils/data-generator.js` gera cargas válidas e variações (montantes pequenos, grandes, moedas diferentes)
-- `utils/metrics.js` declara métricas customizadas (`errors`, `payments_total`, `payment_duration_custom` etc.)
+- `utils/metrics.js` declara métricas customizadas (`errors`, `payments_total`, `payment_duration_custom`, `http_timeouts`, `connection_errors` etc.)
 - `utils/helpers.js` possui rastreadores e logs padronizados para execuções longas
 
 ### Configuração de ambiente
@@ -76,6 +87,8 @@ A pasta `Solution/Payment.IntegrationTest/K6` contém uma coleção de suítes d
 - Ajuste thresholds em `config/thresholds.js` para refletir SLOs da aplicação Minimal API
 
 ### Suítes disponíveis
+
+#### Testes de Performance
 | Suite | Objetivo | Script | Workload | Thresholds | Execução |
 | ----- | -------- | ------ | -------- | ---------- | -------- |
 | Smoke | Validar CRUD básico com baixa carga | `tests/smoke/payment-smoke-test.js` | `smokeWorkload` | `smokeThresholds` | `API_URL=http://localhost:5000 k6 run tests/smoke/payment-smoke-test.js` |
@@ -88,6 +101,27 @@ A pasta `Solution/Payment.IntegrationTest/K6` contém uma coleção de suítes d
 | Carga Constante Alta | Garantir throughput elevado por longos períodos | `tests/high-load/payment-constant-high-load-test.js` | `constantHighLoadWorkload` | `highLoadThresholds` | `k6 run tests/high-load/payment-constant-high-load-test.js` |
 | Cenários Mistos | Simular padrões diferenciados de usuários | `tests/mixed/payment-mixed-scenarios-test.js` | múltiplos executores | thresholds embutidos | `k6 run tests/mixed/payment-mixed-scenarios-test.js` |
 | Benchmark | Suíte abrangente com warmup e validações extras | `tests/benchmark/payment-performance-benchmark-test.js` | `benchmarkWorkload` | `benchmarkThresholds` | `k6 run tests/benchmark/payment-performance-benchmark-test.js` |
+
+#### Testes de Falhas HTTP (Camada de Rede)
+Estes testes simulam problemas na camada HTTP/rede onde **a requisição nem chega na aplicação**. São úteis para validar comportamento do cliente, timeouts, limites de conexão e tratamento de erros de infraestrutura.
+
+| Suite | Objetivo | Script | Workload | Thresholds | Execução |
+| ----- | -------- | ------ | -------- | ---------- | -------- |
+| HTTP Timeout | Forçar timeouts agressivos - requisição não completa | `tests/http-failure/payment-http-timeout-test.js` | `httpTimeoutWorkload` | `httpFailureThresholds` | `k6 run tests/http-failure/payment-http-timeout-test.js` |
+| Connection Limit | Testar pool de conexões sob alta concorrência | `tests/http-failure/payment-connection-limit-test.js` | `connectionLimitWorkload` | `httpFailureThresholds` | `k6 run tests/http-failure/payment-connection-limit-test.js` |
+| Connection Refused | Simular servidor indisponível (porta inválida) | `tests/http-failure/payment-connection-refused-test.js` | `connectionRefusedWorkload` | `httpFailureThresholds` | `k6 run tests/http-failure/payment-connection-refused-test.js` |
+
+**Métricas HTTP específicas:**
+- `http_timeouts`: Taxa de requisições com timeout (status 0, error_code 1050)
+- `connection_errors`: Taxa de erros de conexão (refused, unreachable)
+- `socket_errors`: Taxa de erros de socket/pool
+- `dns_errors`: Taxa de falhas de resolução DNS
+- `network_errors_total`: Contador total de erros na camada HTTP/rede
+
+**Diferença entre falhas HTTP e falhas de aplicação:**
+- **Falhas HTTP (status 0)**: Requisição não chegou na aplicação - timeout, connection refused, DNS failure, socket error
+- **Falhas de aplicação (status 500)**: Requisição chegou mas a aplicação lançou exceção - capturado pelo `GlobalExceptionHandler`
+- **Erros esperados (status 4xx)**: Validação de negócio ou recurso não encontrado - comportamento normal da API
 
 > Dica: execute `npm install --global k6` (ou use binários oficiais) para disponibilizar o comando `k6`. No Windows, verifique se o diretório do k6 está no PATH.
 
