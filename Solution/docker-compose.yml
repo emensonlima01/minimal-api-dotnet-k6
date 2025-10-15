@@ -1,0 +1,299 @@
+version: '3.8'
+
+services:
+  payment-api:
+    build:
+      context: .
+      dockerfile: Payment.Api/Dockerfile
+    container_name: payment-api
+    ports:
+      - "5000:5000"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:5000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/payments"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    networks:
+      - k6-network
+
+  k6-start:
+    image: busybox:latest
+    container_name: k6-start-marker
+    command: echo "Starting K6 tests..."
+    depends_on:
+      payment-api:
+        condition: service_healthy
+    networks:
+      - k6-network
+    restart: "no"
+
+  k6-smoke:
+    image: grafana/k6:latest
+    container_name: k6-smoke-test
+    volumes:
+      - ./Payment.IntegrationTest/k6:/scripts
+    command: run /scripts/tests/smoke/payment-smoke-test.js
+    environment:
+      - API_URL=http://payment-api:5000
+    depends_on:
+      k6-start:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    networks:
+      - k6-network
+    restart: "no"
+
+  k6-load:
+    image: grafana/k6:latest
+    container_name: k6-load-test
+    volumes:
+      - ./Payment.IntegrationTest/k6:/scripts
+    command: run /scripts/tests/load/payment-load-test.js
+    environment:
+      - API_URL=http://payment-api:5000
+    depends_on:
+      k6-smoke:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    networks:
+      - k6-network
+    restart: "no"
+
+  k6-stress:
+    image: grafana/k6:latest
+    container_name: k6-stress-test
+    volumes:
+      - ./Payment.IntegrationTest/k6:/scripts
+    command: run /scripts/tests/stress/payment-stress-test.js
+    environment:
+      - API_URL=http://payment-api:5000
+    depends_on:
+      k6-load:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    networks:
+      - k6-network
+    restart: "no"
+
+  k6-spike:
+    image: grafana/k6:latest
+    container_name: k6-spike-test
+    volumes:
+      - ./Payment.IntegrationTest/k6:/scripts
+    command: run /scripts/tests/spike/payment-spike-test.js
+    environment:
+      - API_URL=http://payment-api:5000
+    depends_on:
+      k6-stress:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    networks:
+      - k6-network
+    restart: "no"
+
+  k6-soak:
+    image: grafana/k6:latest
+    container_name: k6-soak-test
+    volumes:
+      - ./Payment.IntegrationTest/k6:/scripts
+    command: run /scripts/tests/soak/payment-soak-test.js
+    environment:
+      - API_URL=http://payment-api:5000
+    depends_on:
+      k6-spike:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    networks:
+      - k6-network
+    restart: "no"
+
+  k6-breakpoint:
+    image: grafana/k6:latest
+    container_name: k6-breakpoint-test
+    volumes:
+      - ./Payment.IntegrationTest/k6:/scripts
+    command: run /scripts/tests/breakpoint/payment-breakpoint-test.js
+    environment:
+      - API_URL=http://payment-api:5000
+    depends_on:
+      k6-soak:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    networks:
+      - k6-network
+    restart: "no"
+
+  k6-ramp-up:
+    image: grafana/k6:latest
+    container_name: k6-ramp-up-test
+    volumes:
+      - ./Payment.IntegrationTest/k6:/scripts
+    command: run /scripts/tests/ramp-up/payment-ramp-up-test.js
+    environment:
+      - API_URL=http://payment-api:5000
+    depends_on:
+      k6-breakpoint:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    networks:
+      - k6-network
+    restart: "no"
+
+  k6-high-load:
+    image: grafana/k6:latest
+    container_name: k6-high-load-test
+    volumes:
+      - ./Payment.IntegrationTest/k6:/scripts
+    command: run /scripts/tests/high-load/payment-constant-high-load-test.js
+    environment:
+      - API_URL=http://payment-api:5000
+    depends_on:
+      k6-ramp-up:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    networks:
+      - k6-network
+    restart: "no"
+
+  k6-mixed:
+    image: grafana/k6:latest
+    container_name: k6-mixed-test
+    volumes:
+      - ./Payment.IntegrationTest/k6:/scripts
+    command: run /scripts/tests/mixed/payment-mixed-scenarios-test.js
+    environment:
+      - API_URL=http://payment-api:5000
+    depends_on:
+      k6-high-load:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    networks:
+      - k6-network
+    restart: "no"
+
+  k6-benchmark:
+    image: grafana/k6:latest
+    container_name: k6-benchmark-test
+    volumes:
+      - ./Payment.IntegrationTest/k6:/scripts
+    command: run /scripts/tests/benchmark/payment-performance-benchmark-test.js
+    environment:
+      - API_URL=http://payment-api:5000
+    depends_on:
+      k6-mixed:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    networks:
+      - k6-network
+    restart: "no"
+
+  k6-cleanup:
+    image: docker:latest
+    container_name: k6-cleanup
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: >
+      sh -c "
+      echo 'Aguardando conclusão de todos os testes...';
+      sleep 5;
+      echo 'Removendo containers K6...';
+      docker rm -f k6-smoke-test k6-load-test k6-stress-test k6-spike-test k6-soak-test k6-breakpoint-test k6-ramp-up-test k6-high-load-test k6-mixed-test k6-benchmark-test k6-start-marker 2>/dev/null || true;
+      echo 'Limpeza concluída!';
+      "
+    depends_on:
+      k6-benchmark:
+        condition: service_completed_successfully
+    networks:
+      - k6-network
+    restart: "no"
+
+networks:
+  k6-network:
+    driver: bridge
